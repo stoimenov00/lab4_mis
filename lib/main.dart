@@ -1,10 +1,13 @@
-import 'dart:collection';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:geocoder/geocoder.dart';
 import 'package:intl/intl.dart';
+import 'package:latlong/latlong.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:flutter_native_timezone/flutter_native_timezone.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 void main() => runApp(new TodoApp());
 
@@ -15,8 +18,80 @@ class TodoApp extends StatelessWidget {
         theme: ThemeData(
           primarySwatch: Colors.green,
         ),
-        title: "Планер за испити",
+        title: "Потсетник за испити",
         home: new TodoList());
+    //new MapApp());
+  }
+}
+
+class MapApp extends StatefulWidget {
+  @override
+  _MapAppState createState() => _MapAppState();
+}
+
+class MapUtils {
+  MapUtils._();
+
+  static Future<void> openMap(double latitude, double longitude) async {
+    String googleUrl =
+        'https://www.google.com/maps/search/?api=1&query=$latitude,$longitude';
+    if (await canLaunch(googleUrl)) {
+      await launch(googleUrl);
+    } else {
+      throw 'Couldopen the map.';
+    }
+  }
+}
+
+double long = 41.9981;
+double lat = 21.4254;
+LatLng point = LatLng(long, lat);
+var location = [];
+List<Marker> _markers = [];
+
+class _MapAppState extends State<MapApp> {
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        FlutterMap(
+          options: MapOptions(
+            onTap: (p) async {
+              location = await Geocoder.google(
+                  'AIzaSyDmtibS0H1FBkoe7RLpiviV69LD1rJkkHA')
+                  .findAddressesFromCoordinates(
+                  new Coordinates(p.latitude, p.longitude));
+
+              setState(() {
+                _markers.clear();
+                _markers.add(new Marker(
+                  width: 80.0,
+                  height: 80.0,
+                  point: p,
+                  builder: (ctx) => Container(
+                    child: Icon(
+                      Icons.location_on,
+                      color: Colors.red,
+                    ),
+                  ),
+                ));
+                point = p;
+                print(p);
+              });
+            },
+            center: LatLng(long, lat),
+            zoom: 5.0,
+          ),
+          layers: [
+            TileLayerOptions(
+                urlTemplate:
+                "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+                subdomains: ['a', 'b', 'c']),
+            MarkerLayerOptions(markers: _markers),
+          ],
+        ),
+      ],
+    );
   }
 }
 
@@ -25,19 +100,26 @@ class TodoList extends StatefulWidget {
   State<StatefulWidget> createState() => new TodoListState();
 }
 
+class Ispit {
+  String name;
+  DateTime datum;
+  LatLng location;
+  Ispit(this.name, this.datum, this.location);
+}
+
 class User {
-  String user;
-  String pass;
-  Map<String, DateTime> _ispiti = new HashMap<String, DateTime>();
-  List<String> _dates =  new List<String>();
-  User(this.user, this.pass);
+  String username;
+  String password;
+  List<Ispit> _ispiti = new List<Ispit>();
+  List<String> _dates = new List<String>();
+  User(this.username, this.password);
 }
 
 class TodoListState extends State<TodoList> {
   TimeOfDay selectedTime = TimeOfDay.now();
   DateTime selectedDate = DateTime.now();
   DateTime showFor = DateTime.now();
-  Map<String, DateTime> _showIspiti = new HashMap<String, DateTime>();
+  List<Ispit> _showIspiti = new List<Ispit>();
   String _newispit = "";
   String _newPassword = "";
   String _newLogin = "";
@@ -49,7 +131,17 @@ class TodoListState extends State<TodoList> {
 
   FlutterLocalNotificationsPlugin localNotification;
 
+  @override
+  void initState() {
+    super.initState();
+    var androidInitialize = new AndroidInitializationSettings('ic_launcher');
 
+    var iOSImtialize = new IOSInitializationSettings();
+    var initializationSettings = new InitializationSettings(
+        android: androidInitialize, iOS: iOSImtialize);
+    localNotification = new FlutterLocalNotificationsPlugin();
+    localNotification.initialize(initializationSettings);
+  }
 
   Future<void> _showNotification(String title, String body) async {
     tz.initializeTimeZones();
@@ -63,19 +155,20 @@ class TodoListState extends State<TodoList> {
     var generalNotificationDetails =
     new NotificationDetails(android: androidDetails, iOS: iosDetails);
     await localNotification.show(0, title, body, generalNotificationDetails);
+
   }
 
-  void _registriraj() {
+  void _register() {
     User u = new User(_newLogin, _newPassword);
     users.add(u);
     _showNotification(
-        "Успешна регистрација", "Успешно се регистрира корисник " + u.user);
+        "Успешна регистрација", "Успешно се регистрира корисник " + u.username);
   }
 
   void _login() {
     for (User u in users) {
-      if (_newLogin == u.user) {
-        if (_newPassword == u.pass) {
+      if (_newLogin == u.username) {
+        if (_newPassword == u.password) {
           _showNotification(
               "Успешна најава", "Успешно се најавивте " + _loggedInUser);
           setState(() {
@@ -91,11 +184,13 @@ class TodoListState extends State<TodoList> {
       setState(() {
         if (_loggedInUser != "") {
           for (User u in users) {
-            if (u.user == _loggedInUser) {
+            if (u.username == _loggedInUser) {
               DateTime ss = new DateTime(selectedDate.year, selectedDate.month,
                   selectedDate.day, selectedTime.hour, selectedTime.minute);
               u._dates.add(sanitizeDateTime(ss));
-              u._ispiti[_newispit] = ss;
+              u._ispiti.add(new Ispit(_newispit, ss, point));
+              print("POINT:: " + point.toString());
+
               _showNotification(
                   "Полагате испит",
                   "Полагате испит по предметот " +
@@ -109,20 +204,7 @@ class TodoListState extends State<TodoList> {
     }
   }
 
-  @override
-  void initState() {
-    // TODO: implement initState
-    super.initState();
-    var androidInitialize = new AndroidInitializationSettings('ic_launcher');
-    
-    var iOSImtialize = new IOSInitializationSettings();
-    var initializationSettings = new InitializationSettings(
-        android: androidInitialize, iOS: iOSImtialize);
-    localNotification = new FlutterLocalNotificationsPlugin();
-    localNotification.initialize(initializationSettings);
-  }
-
-  _odberiVreme(BuildContext context) async {
+  _selectTime(BuildContext context) async {
     final TimeOfDay timeOfDay = await showTimePicker(
       context: context,
       initialTime: selectedTime,
@@ -135,13 +217,14 @@ class TodoListState extends State<TodoList> {
     }
   }
 
-  _dateFilter(BuildContext context) async {
+  _filterByDate(BuildContext context) async {
     DateTime sDate = null;
     User sU = null;
     if (_loggedInUser != "") {
       for (User u in users) {
-        if (u.user == _loggedInUser) {
-          sDate = u._ispiti.values.last;
+        if (u.username == _loggedInUser) {
+          //sDate = u._ispiti.values.last;
+          sDate = u._ispiti.last.datum;
           sU = u;
         }
       }
@@ -160,13 +243,15 @@ class TodoListState extends State<TodoList> {
     if (selected != null)
       setState(() {
         _showIspiti.clear();
-        for (String ispit in sU._ispiti.keys) {
-          if (sanitizeDateTime(sU._ispiti[ispit])
+
+        for (Ispit ispit in sU._ispiti) {
+          if (sanitizeDateTime(ispit.datum)
               .compareTo(sanitizeDateTime(selected)) ==
               0) {
-            _showIspiti[ispit] = sU._ispiti[ispit];
+            _showIspiti.add(ispit);
           }
         }
+
         showFor = selected;
       });
   }
@@ -184,18 +269,18 @@ class TodoListState extends State<TodoList> {
       });
   }
 
-  void _setNewLoginUState(String user) {
-    if (user.length > 0) {
+  void _setNewLoginUState(String username) {
+    if (username.length > 0) {
       setState(() {
-        _newLogin = user;
+        _newLogin = username;
       });
     }
   }
 
-  void _setNewLoginPState(String pass) {
-    if (pass.length > 0) {
+  void _setNewLoginPState(String password) {
+    if (password.length > 0) {
       setState(() {
-        _newPassword = pass;
+        _newPassword = password;
       });
     }
   }
@@ -215,9 +300,20 @@ class TodoListState extends State<TodoList> {
             ? new IconButton(onPressed: _pushRegister, icon: Icon(Icons.login))
             : new IconButton(onPressed: _logout, icon: Icon(Icons.logout)),
         _loggedInUser == ""
-            ? new IconButton(onPressed: _nothing, icon: Icon(Icons.add))
-            : new IconButton(onPressed: _pushDodajIspit, icon: Icon(Icons.add)),
+            ? new Container(
+          height: 0,
+          width: 0,
+        )
+            : new IconButton(
+            onPressed: _pushDodajIspit, icon: Icon(Icons.add)),
 
+        _loggedInUser == ""
+            ? new Container(
+          height: 0,
+          width: 0,
+        )
+            : new IconButton(
+            onPressed: _showForCurrenMap, icon: Icon(Icons.map)),
 
       ],
     );
@@ -229,7 +325,8 @@ class TodoListState extends State<TodoList> {
       shrinkWrap: true,
       itemCount: _showIspiti.length,
       itemBuilder: (context, index) {
-        String key = _showIspiti.keys.elementAt(index);
+        //String key = _showIspiti.keys.elementAt(index);
+        String key = _showIspiti.elementAt(index).name;
         return new Card(
           child: new ListTile(
             title: Column(
@@ -237,15 +334,21 @@ class TodoListState extends State<TodoList> {
                 new Text(
                   "$key",
                   style: TextStyle(
-                    fontSize: 15,
+                    fontSize: 17,
                     color: Colors.black,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
                 new Text(
-                  "${DateFormat('dd-MM-yyyy - kk:mm').format(_showIspiti[key])}",
+                  //"${DateFormat('dd-MM-yyyy - kk:mm').format(_showIspiti[key])}",
+                  "${DateFormat('dd-MM-yyyy - kk:mm').format(_showIspiti.elementAt(index).datum)}",
                   style: TextStyle(color: Colors.grey, fontSize: 15),
                 ),
+                new IconButton(
+                    onPressed: () => MapUtils.openMap(
+                        _showIspiti.elementAt(index).location.latitude,
+                        _showIspiti.elementAt(index).location.longitude),
+                    icon: Icon(Icons.directions)),
               ],
             ),
             onTap: () => null,
@@ -260,7 +363,7 @@ class TodoListState extends State<TodoList> {
   Widget build(BuildContext context) {
     return new Scaffold(
       appBar: new AppBar(
-        title: new Text('Планер на испити'),
+        title: new Text('Потсетник за испити'),
         actions: [
           _buttons(),
         ],
@@ -298,10 +401,39 @@ class TodoListState extends State<TodoList> {
     }));
   }
 
+  void _pushMap() {
+    Navigator.of(context).push(new MaterialPageRoute(builder: (context) {
+      return _buildMap();
+    }));
+  }
+
+  void _showForCurrenMap() {
+    _markers.clear();
+    for (Ispit i in _showIspiti) {
+      Marker m = new Marker(
+        width: 80.0,
+        height: 80.0,
+        point: i.location,
+        builder: (ctx) => Container(
+          child: Icon(
+            Icons.location_on,
+            color: Colors.green[700],
+            size: 30,
+          ),
+        ),
+      );
+      _markers.add(m);
+    }
+
+    Navigator.of(context).push(new MaterialPageRoute(builder: (context) {
+      return _buildMap();
+    }));
+  }
+
   Widget _datum() {
     User sU = null;
     for (User u in users) {
-      if (_loggedInUser == u.user) {
+      if (_loggedInUser == u.username) {
         sU = u;
       }
     }
@@ -310,43 +442,12 @@ class TodoListState extends State<TodoList> {
     } else {
       return FloatingActionButton(
         onPressed: () {
-          _dateFilter(context);
+          _filterByDate(context);
         },
         tooltip: 'Increment',
         child: Text("датум"),
       );
     }
-  }
-
-  void _nothing() {
-    showAlertDialog(context);
-  }
-
-  showAlertDialog(BuildContext context) {
-    // set up the button
-    Widget okButton = TextButton(
-      child: Text("OK"),
-      onPressed: () {
-        Navigator.pop(context);
-      },
-    );
-
-    // set up the AlertDialog
-    AlertDialog alert = AlertDialog(
-      title: Text("Грешка"),
-      content: Text("Најпрво треба да се најавет!"),
-      actions: [
-        okButton,
-      ],
-    );
-
-    // show the dialog
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return alert;
-      },
-    );
   }
 
   Widget _buildRegister() {
@@ -404,7 +505,7 @@ class TodoListState extends State<TodoList> {
                     ),
                     new ElevatedButton(
                       onPressed: () {
-                        _registriraj();
+                        _register();
                         Navigator.pop(context);
                       },
                       child: new Text("Регистрација"),
@@ -439,9 +540,15 @@ class TodoListState extends State<TodoList> {
           ),
           ElevatedButton(
             onPressed: () {
-              _odberiVreme(context);
+              _selectTime(context);
             },
             child: Text("Избери време"),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              _pushMap();
+            },
+            child: Text("Избери локација"),
           ),
         ],
       );
@@ -468,5 +575,9 @@ class TodoListState extends State<TodoList> {
                 )
               ],
             )));
+  }
+
+  Widget _buildMap() {
+    return new MapApp();
   }
 }

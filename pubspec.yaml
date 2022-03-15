@@ -28,6 +28,22 @@ dependencies:
   flutter_local_notifications: ^4.0.1+2
   flutter_native_timezone: ^2.0.0
 
+  #location
+  flutter_map: any
+  geocoding: ^1.0.5
+  geocoder: ^0.2.1
+  tuple: ^1.0.2
+  latlong: ^0.6.1
+  positioned_tap_detector_2: ^1.0.0
+  transparent_image: ^1.0.0
+  async: ^2.1.0
+  flutter_image: ^3.0.0
+  vector_math: ^2.0.0
+  proj4dart: ^1.0.4
+  meta: ^1.1.0
+  collection: ^1.14.0
+  google_maps_utils: ^1.5.0+0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
